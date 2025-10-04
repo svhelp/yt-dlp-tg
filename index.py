@@ -78,3 +78,7 @@ def webhook(webhook_data: TelegramWebhook):
     app.process_update(update)
 
     return {"message": "ok"}
+
+@app.get("/")
+def index():
+    return {"message": "Hello World"}
