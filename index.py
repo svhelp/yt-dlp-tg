@@ -3,11 +3,14 @@ import os
 from uuid import uuid4
 from typing import Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import Application, filters, MessageHandler, InlineQueryHandler, ContextTypes, CommandHandler
+
+load_dotenv()
 
 TOKEN = os.environ.get("TELEGRAM_API_KEY")
 
@@ -18,17 +21,17 @@ class TelegramWebhook(BaseModel):
     Telegram Webhook Model using Pydantic for request body validation
     '''
     update_id: int
-    message: Optional[dict]
-    edited_message: Optional[dict]
-    channel_post: Optional[dict]
-    edited_channel_post: Optional[dict]
-    inline_query: Optional[dict]
-    chosen_inline_result: Optional[dict]
-    callback_query: Optional[dict]
-    shipping_query: Optional[dict]
-    pre_checkout_query: Optional[dict]
-    poll: Optional[dict]
-    poll_answer: Optional[dict]
+    message: Optional[dict] = None
+    edited_message: Optional[dict] = None
+    channel_post: Optional[dict] = None
+    edited_channel_post: Optional[dict] = None
+    inline_query: Optional[dict] = None
+    chosen_inline_result: Optional[dict] = None
+    callback_query: Optional[dict] = None
+    shipping_query: Optional[dict] = None
+    pre_checkout_query: Optional[dict] = None
+    poll: Optional[dict] = None
+    poll_answer: Optional[dict] = None
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, I didn't understand that command.")
@@ -68,17 +71,20 @@ def register_handlers(dispatcher: Application):
     dispatcher.add_handler(unknown_handler)
 
 @app.post("/webhook")
-def webhook(webhook_data: TelegramWebhook):
+async def webhook(webhook_data: TelegramWebhook):
     app = Application.builder().token(TOKEN).build()
+
+    await app.initialize()
+
     update = Update.de_json(webhook_data.__dict__, app.bot) # convert the Telegram Webhook class to dictionary using __dict__ dunder method
 
     register_handlers(app)
 
     # handle webhook request
-    app.process_update(update)
+    await app.process_update(update)
 
     return {"message": "ok"}
 
 @app.get("/")
-def index():
+async def index():
     return {"message": "Hello World"}
