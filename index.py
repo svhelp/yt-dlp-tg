@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from telegram import Update, Bot
-from telegram.ext import filters, Dispatcher, MessageHandler, InlineQueryHandler, InlineQueryResultArticle, InputTextMessageContent, ContextTypes, CommandHandler
+from telegram.ext import Application, filters, MessageHandler, InlineQueryHandler, InlineQueryResultArticle, InputTextMessageContent, ContextTypes, CommandHandler
 
 TOKEN = os.environ.get("TELEGRAM_API_KEY")
 
@@ -53,7 +53,7 @@ async def inline_caps(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await context.bot.answer_inline_query(update.inline_query.id, results)
 
-def register_handlers(dispatcher):
+def register_handlers(dispatcher: Application):
     start_handler = CommandHandler('start', start)
     dispatcher.add_handler(start_handler)
 
@@ -69,14 +69,13 @@ def register_handlers(dispatcher):
 
 @app.post("/webhook")
 def webhook(webhook_data: TelegramWebhook):
-    # Method 1
-    bot = Bot(token=TOKEN)
-    update = Update.de_json(webhook_data.__dict__, bot) # convert the Telegram Webhook class to dictionary using __dict__ dunder method
-    dispatcher = Dispatcher(bot, None, workers=4)
-    register_handlers(dispatcher)
+    app = Application.builder().token(TOKEN).build()
+    update = Update.de_json(webhook_data.__dict__, app.bot) # convert the Telegram Webhook class to dictionary using __dict__ dunder method
+
+    register_handlers(app)
 
     # handle webhook request
-    dispatcher.process_update(update)
+    app.process_update(update)
 
     return {"message": "ok"}
 
