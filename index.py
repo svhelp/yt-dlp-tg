@@ -6,8 +6,8 @@ from typing import Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from telegram import Update, Bot
-from telegram.ext import Application, filters, MessageHandler, InlineQueryHandler, InlineQueryResultArticle, InputTextMessageContent, ContextTypes, CommandHandler
+from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
+from telegram.ext import Application, filters, MessageHandler, InlineQueryHandler, ContextTypes, CommandHandler
 
 TOKEN = os.environ.get("TELEGRAM_API_KEY")
 
