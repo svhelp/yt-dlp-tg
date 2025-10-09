@@ -22,12 +22,7 @@ class RequestType(enum.Enum):
     INLINE = "inline"
     PERSONAL = "personal"
     CATCHED = "catched"
-    
-class PlatformType(enum.Enum):
-    YT = "YouTube"
-    TT = "TikTok"
-    INST = "Instagram"
-    
+        
 class UserTier(enum.Enum):
     LIMITED = "limited"
     REGULAR = "regular"
@@ -70,10 +65,7 @@ class VideoAuthor(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     platform_id: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
-    platform: Mapped[PlatformType] = mapped_column(
-        Enum(PlatformType, native_enum=False),
-        nullable=False
-    )
+    platform: Mapped[str] = mapped_column(String(30))
 
     videos: Mapped[List["Video"]] = relationship(back_populates="author")
 
@@ -112,6 +104,8 @@ class Request(Base):
     link: Mapped[str] = mapped_column(String(255))
     chat_id: Mapped[Optional[int]] = mapped_column()
     message_id: Mapped[str] = mapped_column(String(50))
+    error_message: Mapped[Optional[str]] = mapped_column(String(255))
+    error_details: Mapped[Optional[str]] = mapped_column(String(1024))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     user_account_id: Mapped[int] = mapped_column(ForeignKey("user_account.id"))
@@ -121,4 +115,4 @@ class Request(Base):
     video: Mapped["Video"] = relationship(back_populates="request")
     
     def __repr__(self) -> str:
-        return f"Request(id={self.id!r}, status={self.status!r}, type={self.type!r}, link={self.link!r}, chat_id={self.chat_id!r}, message_id={self.message_id!r}, created_at={self.created_at!r}, user_account_id={self.user_account_id!r}, video_id={self.video_id!r})"
+        return f"Request(id={self.id!r}, status={self.status!r}, type={self.type!r}, link={self.link!r}, chat_id={self.chat_id!r}, message_id={self.message_id!r}, error_message={self.error_message!r}, error_details={self.error_details!r}, created_at={self.created_at!r}, user_account_id={self.user_account_id!r}, video_id={self.video_id!r})"

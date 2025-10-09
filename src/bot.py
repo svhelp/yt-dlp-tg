@@ -1,52 +1,91 @@
 import os
-import random
-import string
 import yt_dlp
+import traceback
 import src.config
 
 from uuid import uuid4
 
-from urllib.parse import urlparse
-
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, InlineQueryResultPhoto, InputMediaVideo, InlineQueryResultCachedVideo, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, filters, MessageHandler, InlineQueryHandler, ChosenInlineResultHandler, ContextTypes, CommandHandler
 
+from src.core.utils import generate_random_string, verify_supported_url
+
 from src.db.engine import engine
-from src.db.schema import User, File, Request, RequestStatus, RequestType
+from src.db.schema import User, File, Request, Video, RequestStatus, RequestType, VideoAuthor
 from sqlalchemy.orm import Session
 
+HOST = os.getenv("HOST")
 TOKEN = os.getenv("TELEGRAM_API_KEY")
+STORAGE_PATH = os.getenv("STORAGE_PATH")
 MAX_FILE_SIZE = 45 * 1024 * 1024
 
-def generate_random_string(length):
-    characters = string.ascii_letters + string.digits
-    random_string = ''.join(random.choice(characters) for _ in range(length))
-    return random_string
+async def process_link(request: Request, link: str):
+    hash_name = generate_random_string(16)
+    ydl_opts = {
+        'outtmpl': f'{STORAGE_PATH}/{hash_name}.%(ext)s',
+        'merge_output_format': 'mp4',
+    }
 
-def verify_supported_url(url: str) -> bool:
-    if not url:
-        return False
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(link, download=False)
+        elements_count = len(info['entries']) if 'entries' in info else 1
 
-    try:
-        parsed = urlparse(url)
-        hostname = (parsed.hostname or "").lower()
+        if elements_count != 1:
+            return {
+                'error_message': f'Videos count: {elements_count}'
+            }
+        
+        filesize = (
+            info.get('filesize')
+            or info.get('filesize_approx')
+            or (info.get('formats')[-1].get('filesize') if info.get('formats') else None)
+        )
 
-        social_domains = {
-            "youtube.com",
-            "youtu.be",
-            "instagram.com",
-            "tiktok.com",
-        }
+        if filesize > MAX_FILE_SIZE:
+            return {
+                'error_message': f'File is too big: {filesize}'
+            }
+        
+        try:
+            info = ydl.extract_info(link, download=True)
+            path = info['requested_downloads'][0]['filepath']
+        except Exception as e:
+            return {
+                'error_message': str(e),
+                'error_details': traceback.format_exc()[:1000],
+            }
 
-        return any(hostname == domain or hostname.endswith(f".{domain}") for domain in social_domains)
+    with Session(engine) as session:
+        file = File(
+            path = path
+        )
+        session.add(file)  
+        
+        platform = info.get("extractor")
+        platform_id = info.get("uploader_id")
 
-    except Exception:
-        return False
+        author = session.query(VideoAuthor).filter(VideoAuthor.platform == platform and VideoAuthor.platform_id == platform_id).first()
+        if not author:
+            author = VideoAuthor(
+                platform = platform,
+                platform_id = platform_id,
+                name = info.get("uploader"),
+            )
+            session.add(author)    
+            
+        video = Video(
+            original_name = info.get("title"),
+            author = author,
+            file = file,
+            request = request
+        )
 
-def too_large_file(info, *, incomplete):
-    size = info.get('filesize')
-    if size and size > MAX_FILE_SIZE:
-        return 'The video is too big.'
+        session.add(video)
+        session.commit()
+
+    return {
+        'result': path
+    }
 
 async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = update.effective_chat.type
@@ -61,7 +100,6 @@ async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     sender = update.effective_user
-    msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="Processing...")
 
     with Session(engine) as session:
         user = session.get(User, sender.id)
@@ -69,9 +107,15 @@ async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user = User(
                 id=sender.id,
                 name=sender.full_name,
-                user_name=sender.username
+                username=sender.username
             )
-            session.add(user)
+            session.add(user)    
+            
+        if user.is_banned:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="You are banned")
+            return        
+
+        msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="Processing...")
 
         request = Request(
             chat_id = update.effective_chat.id,
@@ -85,21 +129,24 @@ async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session.add(request)
         session.commit()
 
-    # hash_name = generate_random_string(16)
-    ydl_opts = {
-        'match_filter': too_large_file,
-        # 'outtmpl': f'{hash_name}.%(ext)s'
-    }
+    download_result = await process_link(request, link)
+    file_path = download_result.get("result")
 
-    # with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-    #     info = ydl.extract_info(link, download=True)
-    #     await msg.reply_video(open(info['requested_downloads'][0]['filepath'], 'rb'))
-    
-    # try:
-    #     video = await download_video_to_memory(link)
-    #     await msg.reply_video(video)
-    # except Exception as e:
-    #     await msg.edit_text("Error during downloading.")
+    if not file_path:
+        await msg.edit_text("Error happened.")
+
+        with Session(engine) as session:
+            request.status = RequestStatus.FAILED
+            request.error_message = download_result.get("error_message")
+            request.error_details = download_result.get("error_details")
+
+            session.commit()
+
+    await msg.reply_video(open(file_path, 'rb'))
+    with Session(engine) as session:
+        request.status = RequestStatus.SUCCESSFUL
+
+        session.commit()
 
 async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chosen_option = update.chosen_inline_result
@@ -111,16 +158,23 @@ async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_T
     link = chosen_option.query.strip()
     sender = chosen_option.from_user
 
+    if not verify_supported_url(link):
+        return
+    
     with Session(engine) as session:
         user = session.get(User, sender.id)
         if not user:
             user = User(
                 id=sender.id,
                 name=sender.full_name,
-                user_name=sender.username
+                username=sender.username
             )
             session.add(user)
 
+        if user.is_banned:
+            await context.bot.edit_message_text(chat_id=update.effective_chat.id, text="You are banned")
+            return   
+        
         request = Request(
             message_id = inline_message_id,
             status = RequestStatus.PENDING,
@@ -131,11 +185,35 @@ async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_T
 
         session.add(request)
         session.commit()
+    
+    download_result = await process_link(request, link)
+    file_path = download_result.get("result")
 
-    # await context.bot.edit_message_media(
-    #     inline_message_id=inline_message_id,
-    #     media=InputMediaVideo(media='https://test-videos.co.uk/vids/bigbuckbunny/mp4/av1/360/Big_Buck_Bunny_360_10s_1MB.mp4', caption="✅ Готово!")
-    # )
+    if not file_path:
+        await context.bot.edit_message_text(
+            inline_message_id=inline_message_id,
+            text="Error happened."
+        )
+
+        with Session(engine) as session:
+            request.status = RequestStatus.FAILED
+            request.error_message = download_result.get("error_message")
+            request.error_details = download_result.get("error_details")
+
+            session.commit()
+
+    await context.bot.edit_message_media(
+        inline_message_id=inline_message_id,
+        media=InputMediaVideo(
+            media=f'{HOST}/static/{os.path.basename(file_path)}',
+            caption="✅ Готово!"
+        )
+    )
+
+    with Session(engine) as session:
+        request.status = RequestStatus.SUCCESSFUL
+
+        session.commit()
 
 async def inline_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
@@ -210,8 +288,8 @@ def resolve_bot():
 
     app.add_handler(CommandHandler('start', start))
     
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.VIDEO, handle_video))
+    # app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    # app.add_handler(MessageHandler(filters.VIDEO, handle_video))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), personal_request))
 
     app.add_handler(InlineQueryHandler(inline_request))

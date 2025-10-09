@@ -1,13 +1,17 @@
+import os
 import src.config
 
 from typing import Optional
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from src.bot import resolve_bot
 
 from telegram import Update
 
 app = FastAPI()
+
+STORAGE_PATH = os.getenv("STORAGE_PATH")
 
 class TelegramWebhook(BaseModel):
     '''
@@ -42,3 +46,5 @@ async def webhook(webhook_data: TelegramWebhook):
 @app.get("/")
 async def index():
     return {"message": "Hello World"}
+
+app.mount("/static", StaticFiles(directory=STORAGE_PATH), name="static")
