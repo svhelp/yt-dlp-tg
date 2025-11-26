@@ -91,3 +91,31 @@ async def process_video(request: Request, link: str):
             'author': author,
         }
     }
+
+INSTAGRAM_EXTRACTOR_NAME = 'Instagram'
+YOUTUBE_EXTRACTOR_NAME = 'Youtube'
+TIKTOK_EXTRACTOR_NAME = 'TikTok'
+
+def parse_video_info(info: dict[str, any]):
+    return {
+        'title': info.get("title"),
+        'video_id': info.get("id"),
+        'video_link': prepare_video_link(info),
+        'platform': info.get("extractor"),
+        'author_name': info.get("uploader"),
+        'author_id': info.get("uploader_id"),
+    }
+
+def prepare_video_link(info: dict[str, any]):
+    extractor = info.get("extractor")
+
+    if extractor == TIKTOK_EXTRACTOR_NAME:
+        return f"https://www.tiktok.com/{info.get("uploader_id")}/video/{info.get("id")}"
+    
+    if extractor == INSTAGRAM_EXTRACTOR_NAME:
+        return f"https://www.instagram.com/reel/{info.get("id")}"
+    
+    if extractor == YOUTUBE_EXTRACTOR_NAME:
+        return f"https://www.youtube.com/shorts/{info.get("id")}" if info.get("media_type") == 'short' else f"https://www.youtube.com/watch?v={info.get("id")}"
+    
+    return None
