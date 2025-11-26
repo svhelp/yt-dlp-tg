@@ -3,6 +3,7 @@ import yt_dlp
 import traceback
 import src.config
 
+from src.core.cookies import get_cookies_path
 from src.core.utils import generate_random_string
 from src.db.repository import create_file_data
 
@@ -25,10 +26,12 @@ def progress_filesize_hook(d):
         
 async def process_video(request: Request, link: str):
     hash_name = generate_random_string(16)
+    cookies_file = get_cookies_path(link)
     ydl_opts = {
         'outtmpl': f'{STORAGE_PATH}/{hash_name}.%(ext)s',
         'merge_output_format': 'mp4',
         'progress_hooks': [progress_filesize_hook],
+        'cookiefile': cookies_file,
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:

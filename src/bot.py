@@ -58,7 +58,8 @@ async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await msg.reply_video(
         video=open(actual_result.get('path'), 'rb'),
-        caption=f"by {actual_result.get('author')}"
+        caption=f"by <a href='{link}'>{actual_result.get('author')}</a>",
+        parse_mode="HTML"
     )
 
     set_request_successful(request_id)
@@ -109,7 +110,8 @@ async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_T
         inline_message_id=inline_message_id,
         media=InputMediaVideo(
             media=f"{HOST}/static/{os.path.basename(actual_result.get('path'))}",
-            caption=f"by {actual_result.get('author')}"
+            caption=f"by <a href='{link}'>{actual_result.get('author')}</a>",
+            parse_mode="HTML"
         )
     )
 
