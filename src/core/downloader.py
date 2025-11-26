@@ -30,6 +30,9 @@ async def process_video(request: Request, link: str):
     ydl_opts = {
         'outtmpl': f'{STORAGE_PATH}/{hash_name}.%(ext)s',
         'merge_output_format': 'mp4',
+        'postprocessor_args': {
+            'default': ["-c:v", "libx265", "-crf", "28", "-c:a", "aac", "-b:a", "128k"]
+        },
         'progress_hooks': [progress_filesize_hook],
         'cookiefile': cookies_file,
     }
