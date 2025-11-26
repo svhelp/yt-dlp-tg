@@ -4,8 +4,10 @@ from datetime import datetime, date, timedelta
 from src.db.engine import engine
 from src.db.schema import User, File, Request, Video, RequestStatus, RequestType, VideoAuthor
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy import select, func
+
+SessionLocal = sessionmaker(engine, expire_on_commit=False)
 
 def get_or_create_user(id: int, name: str, username: str):
     with Session(engine) as session:
@@ -56,15 +58,18 @@ def create_request(user_id: int, type: RequestType, link: str, message_id: str, 
         session.refresh(request)
 
         return request
-    
-def update_request(request_id: int, status: RequestStatus, error_message: Optional[str] = None, error_details: Optional[str] = None):
+
+def set_request_successful(request_id: int):
+    with Session(engine) as session:
+        session.query(Request).filter(Request.id == request_id).update({Request.status: RequestStatus.SUCCESSFUL})
+        session.commit()
+
+def set_request_error(request_id: int, error_message: str, error_details: Optional[str] = None):
     with Session(engine) as session:
         request_data = dict(
-            status=status,
+            status=RequestStatus.FAILED,
+            error_message=error_message,
         )
-
-        if error_message is not None:
-            request_data["error_message"] = error_message
 
         if error_details is not None:
             request_data["error_details"] = error_details

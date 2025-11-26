@@ -7,7 +7,7 @@ from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, 
 from telegram.ext import Application, filters, MessageHandler, InlineQueryHandler, ChosenInlineResultHandler, ContextTypes, CommandHandler
 
 from src.core.utils import verify_supported_url
-from src.db.repository import get_or_create_user, create_request, update_request, get_today_requests_count
+from src.db.repository import get_or_create_user, create_request, set_request_successful, set_request_error, get_today_requests_count
 from src.core.downloader import process_video
 
 from src.db.schema import RequestStatus, RequestType
@@ -44,6 +44,7 @@ async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="Processing...")
 
     request = create_request(user.id, RequestType.PERSONAL, link, msg.message_id, update.effective_chat.id)
+    request_id = request.id
 
     download_result = await process_video(request, link)
     actual_result = download_result.get("result")
@@ -51,14 +52,16 @@ async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not actual_result:
         await msg.edit_text("Произошла ошибка")
 
-        update_request(request.id, RequestStatus.FAILED, download_result.get("error_message"), download_result.get("error_details"))
+        set_request_error(request_id, download_result.get("error_message"), download_result.get("error_details"))
+
+        return
 
     await msg.reply_video(
         video=open(actual_result.get('path'), 'rb'),
         caption=f"by {actual_result.get("author")}"
     )
 
-    update_request(request.id, RequestStatus.SUCCESSFUL)
+    set_request_successful(request_id)
 
 async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chosen_option = update.chosen_inline_result
@@ -87,6 +90,7 @@ async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
     
     request = create_request(user.id, RequestType.INLINE, link, inline_message_id)
+    request_id = request.id
     
     download_result = await process_video(request, link)
     actual_result = download_result.get("result")
@@ -97,7 +101,9 @@ async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_T
             text="Произошла ошибка"
         )
 
-        update_request(request.id, RequestStatus.FAILED, download_result.get("error_message"), download_result.get("error_details"))
+        set_request_error(request_id, download_result.get("error_message"), download_result.get("error_details"))
+        
+        return
 
     await context.bot.edit_message_media(
         inline_message_id=inline_message_id,
@@ -107,7 +113,7 @@ async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_T
         )
     )
 
-    update_request(request.id, RequestStatus.SUCCESSFUL)
+    set_request_successful(request_id)
 
 async def inline_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
