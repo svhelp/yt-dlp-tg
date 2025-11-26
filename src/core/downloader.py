@@ -9,6 +9,7 @@ from src.db.repository import create_file_data
 
 from src.db.schema import Request
 
+DEVELOP_MODE = os.getenv("MODE") == 'develop'
 STORAGE_PATH = os.getenv("STORAGE_PATH")
 MAX_FILE_SIZE = 45 * 1024 * 1024
 
@@ -36,6 +37,9 @@ async def process_video(request: Request, link: str):
         'progress_hooks': [progress_filesize_hook],
         'cookiefile': cookies_file,
     }
+
+    if DEVELOP_MODE:
+        ydl_opts.update({'verbose': 'true'})
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:

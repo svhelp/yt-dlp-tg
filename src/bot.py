@@ -7,14 +7,14 @@ from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, 
 from telegram.ext import Application, filters, MessageHandler, InlineQueryHandler, ChosenInlineResultHandler, ContextTypes, CommandHandler
 
 from src.core.utils import verify_supported_url
-from src.db.repository import get_or_create_user, create_request, set_request_successful, set_request_error, get_today_requests_count
+from src.core.limits import ensure_user_limits
+from src.db.repository import get_or_create_user, create_request, set_request_successful, set_request_error
 from src.core.downloader import process_video
 
 from src.db.schema import RequestStatus, RequestType
 
 HOST = os.getenv("HOST")
 TOKEN = os.getenv("TELEGRAM_API_KEY")
-MAX_REQUESTS = 15
 
 async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = update.effective_chat.type
@@ -35,9 +35,9 @@ async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Вы заблокированы")
         return
     
-    requests_today = get_today_requests_count(user.id)
+    request_available = ensure_user_limits(user)
 
-    if requests_today >= MAX_REQUESTS:
+    if not request_available:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="Количество запросов на день исчерпано, попробуйте завтра")
         return
     
@@ -85,9 +85,9 @@ async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_T
         await context.bot.edit_message_text(inline_message_id=inline_message_id, text="Вы заблокированы")
         return  
     
-    requests_today = get_today_requests_count(user.id)
+    request_available = ensure_user_limits(user)
 
-    if requests_today >= MAX_REQUESTS:
+    if not request_available:
         await context.bot.edit_message_text(inline_message_id=inline_message_id, text="Количество запросов на день исчерпано, попробуйте завтра")
         return
     

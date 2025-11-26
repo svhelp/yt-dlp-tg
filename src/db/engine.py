@@ -3,6 +3,7 @@ import os
 
 from sqlalchemy import create_engine
 
+develop_mode = os.getenv("MODE") == 'develop'
 host = os.getenv("DB_HOST")
 db_name = os.getenv("DB_NAME")
 username = os.getenv("DB_USERNAME")
@@ -16,5 +17,5 @@ engine = create_engine(
   connection_string,
   pool_pre_ping=True,
   pool_recycle=3600,
-  echo=True
+  echo=develop_mode
 )
