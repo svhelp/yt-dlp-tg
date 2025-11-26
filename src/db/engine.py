@@ -8,7 +8,8 @@ db_name = os.getenv("DB_NAME")
 username = os.getenv("DB_USERNAME")
 password = os.getenv("DB_PASSWORD")
 
-engine = create_engine(
-    f"mysql+pymysql://{username}:{password}@{host}:3306/{db_name}",
-    echo=True
-)
+connection_string = f"mysql+pymysql://{username}:{password}@{host}:3306/{db_name}"
+
+print(f"Connecting to DB: {connection_string}")
+
+engine = create_engine(connection_string, echo=True)
