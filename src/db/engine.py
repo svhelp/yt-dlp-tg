@@ -12,4 +12,9 @@ connection_string = f"mysql+pymysql://{username}:{password}@{host}:3306/{db_name
 
 print(f"Connecting to DB: {connection_string}")
 
-engine = create_engine(connection_string, echo=True)
+engine = create_engine(
+  connection_string,
+  pool_pre_ping=True,
+  pool_recycle=3600,
+  echo=True
+)

@@ -3,7 +3,7 @@ import src.config
 
 from uuid import uuid4
 
-from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, InlineQueryResultPhoto, InputMediaVideo, InlineQueryResultCachedVideo, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, filters, MessageHandler, InlineQueryHandler, ChosenInlineResultHandler, ContextTypes, CommandHandler
 
 from src.core.utils import verify_supported_url
@@ -14,7 +14,7 @@ from src.db.schema import RequestStatus, RequestType
 
 HOST = os.getenv("HOST")
 TOKEN = os.getenv("TELEGRAM_API_KEY")
-MAX_REQUESTS = 100
+MAX_REQUESTS = 15
 
 async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = update.effective_chat.type
@@ -58,7 +58,7 @@ async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await msg.reply_video(
         video=open(actual_result.get('path'), 'rb'),
-        caption=f"by {actual_result.get("author")}"
+        caption=f"by {actual_result.get('author')}"
     )
 
     set_request_successful(request_id)
@@ -104,12 +104,12 @@ async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_T
         set_request_error(request_id, download_result.get("error_message"), download_result.get("error_details"))
         
         return
-
+    
     await context.bot.edit_message_media(
         inline_message_id=inline_message_id,
         media=InputMediaVideo(
-            media=f'{HOST}/static/{os.path.basename(actual_result.get("path"))}',
-            caption=f"by {actual_result.get("author")}"
+            media=f"{HOST}/static/{os.path.basename(actual_result.get('path'))}",
+            caption=f"by {actual_result.get('author')}"
         )
     )
 
@@ -127,31 +127,10 @@ async def inline_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if verify_supported_url(link):
         results.append(
-            # InlineQueryResultCachedVideo(
-            #     id=str(uuid4()),
-            #     # mime_type="image/jpeg",
-            #     title="Title",
-            #     caption="Caption",
-            #     description="Description",
-            #     # photo_file_id='AgACAgIAAxkBAAN6aOVR6zD6oShCP2fdn4sQfr7vtDIAApgEMhtyPClLYR7rqe8PQmQBAAMCAANtAAM2BA',
-            #     video_file_id='BAACAgIAAxkBAAOAaOVbMgKWXI05DAABDEFp3UrDgrz1AAJ0jQACcjwpSzHyHYcerVVbNgQ',
-            #     reply_markup=keyboard
-            # ),
-            # InlineQueryResultPhoto(
-            #     id=str(uuid4()),
-            #     # mime_type="image/jpeg",
-            #     title="Title",
-            #     caption="Caption",
-            #     description="Description",
-            #     photo_url='https://fastly.picsum.photos/id/31/3264/4912.jpg?hmac=lfmmWE3h_aXmRwDDZ7pZb6p0Foq6u86k_PpaFMnq0r8',
-            #     thumbnail_url='https://fastly.picsum.photos/id/31/3264/4912.jpg?hmac=lfmmWE3h_aXmRwDDZ7pZb6p0Foq6u86k_PpaFMnq0r8',
-            #     reply_markup=keyboard
-            # ),
             InlineQueryResultArticle(
                 id=str(uuid4()),
                 title="Отправить видео",
                 input_message_content=InputTextMessageContent("Загружаю видео..."),
-                # description="Нажми, чтобы получить картинку",
                 reply_markup=keyboard
             )
         )
