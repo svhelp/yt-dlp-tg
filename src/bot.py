@@ -1,6 +1,4 @@
 import os
-import yt_dlp
-import traceback
 import src.config
 
 from uuid import uuid4
@@ -8,84 +6,15 @@ from uuid import uuid4
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, InlineQueryResultPhoto, InputMediaVideo, InlineQueryResultCachedVideo, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, filters, MessageHandler, InlineQueryHandler, ChosenInlineResultHandler, ContextTypes, CommandHandler
 
-from src.core.utils import generate_random_string, verify_supported_url
+from src.core.utils import verify_supported_url
+from src.db.repository import get_or_create_user, create_request, update_request, get_today_requests_count
+from src.core.downloader import process_video
 
-from src.db.engine import engine
-from src.db.schema import User, File, Request, Video, RequestStatus, RequestType, VideoAuthor
-from sqlalchemy.orm import Session
+from src.db.schema import RequestStatus, RequestType
 
 HOST = os.getenv("HOST")
 TOKEN = os.getenv("TELEGRAM_API_KEY")
-STORAGE_PATH = os.getenv("STORAGE_PATH")
-MAX_FILE_SIZE = 45 * 1024 * 1024
-
-async def process_link(request: Request, link: str):
-    hash_name = generate_random_string(16)
-    ydl_opts = {
-        'outtmpl': f'{STORAGE_PATH}/{hash_name}.%(ext)s',
-        'merge_output_format': 'mp4',
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(link, download=False)
-        elements_count = len(info['entries']) if 'entries' in info else 1
-
-        if elements_count != 1:
-            return {
-                'error_message': f'Videos count: {elements_count}'
-            }
-        
-        filesize = (
-            info.get('filesize')
-            or info.get('filesize_approx')
-            or (info.get('formats')[-1].get('filesize') if info.get('formats') else None)
-        )
-
-        if filesize > MAX_FILE_SIZE:
-            return {
-                'error_message': f'File is too big: {filesize}'
-            }
-        
-        try:
-            info = ydl.extract_info(link, download=True)
-            path = info['requested_downloads'][0]['filepath']
-        except Exception as e:
-            return {
-                'error_message': str(e),
-                'error_details': traceback.format_exc()[:1000],
-            }
-
-    with Session(engine) as session:
-        file = File(
-            path = path
-        )
-        session.add(file)  
-        
-        platform = info.get("extractor")
-        platform_id = info.get("uploader_id")
-
-        author = session.query(VideoAuthor).filter(VideoAuthor.platform == platform and VideoAuthor.platform_id == platform_id).first()
-        if not author:
-            author = VideoAuthor(
-                platform = platform,
-                platform_id = platform_id,
-                name = info.get("uploader"),
-            )
-            session.add(author)    
-            
-        video = Video(
-            original_name = info.get("title"),
-            author = author,
-            file = file,
-            request = request
-        )
-
-        session.add(video)
-        session.commit()
-
-    return {
-        'result': path
-    }
+MAX_REQUESTS = 100
 
 async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = update.effective_chat.type
@@ -94,59 +23,42 @@ async def personal_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     link = update.message.text.strip()
-
-    if not verify_supported_url(link):
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Invalid URL")
-        return
-    
     sender = update.effective_user
 
-    with Session(engine) as session:
-        user = session.get(User, sender.id)
-        if not user:
-            user = User(
-                id=sender.id,
-                name=sender.full_name,
-                username=sender.username
-            )
-            session.add(user)    
-            
-        if user.is_banned:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="You are banned")
-            return        
+    if not verify_supported_url(link):
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Ссылка не поддерживается")
+        return
 
-        msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="Processing...")
+    user = get_or_create_user(sender.id, sender.full_name, sender.username)
 
-        request = Request(
-            chat_id = update.effective_chat.id,
-            message_id = msg.message_id,
-            status = RequestStatus.PENDING,
-            type = RequestType.PERSONAL,
-            link = link,
-            user_account = user,
-        )
+    if user.is_banned:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Вы заблокированы")
+        return
+    
+    requests_today = get_today_requests_count(user.id)
 
-        session.add(request)
-        session.commit()
+    if requests_today >= MAX_REQUESTS:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Количество запросов на день исчерпано, попробуйте завтра")
+        return
+    
+    msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="Processing...")
 
-    download_result = await process_link(request, link)
-    file_path = download_result.get("result")
+    request = create_request(user.id, RequestType.PERSONAL, link, msg.message_id, update.effective_chat.id)
 
-    if not file_path:
-        await msg.edit_text("Error happened.")
+    download_result = await process_video(request, link)
+    actual_result = download_result.get("result")
 
-        with Session(engine) as session:
-            request.status = RequestStatus.FAILED
-            request.error_message = download_result.get("error_message")
-            request.error_details = download_result.get("error_details")
+    if not actual_result:
+        await msg.edit_text("Произошла ошибка")
 
-            session.commit()
+        update_request(request.id, RequestStatus.FAILED, download_result.get("error_message"), download_result.get("error_details"))
 
-    await msg.reply_video(open(file_path, 'rb'))
-    with Session(engine) as session:
-        request.status = RequestStatus.SUCCESSFUL
+    await msg.reply_video(
+        video=open(actual_result.get('path'), 'rb'),
+        caption=f"by {actual_result.get("author")}"
+    )
 
-        session.commit()
+    update_request(request.id, RequestStatus.SUCCESSFUL)
 
 async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chosen_option = update.chosen_inline_result
@@ -159,61 +71,43 @@ async def chosen_inline_callback(update: Update, context: ContextTypes.DEFAULT_T
     sender = chosen_option.from_user
 
     if not verify_supported_url(link):
+        await context.bot.edit_message_text(inline_message_id=inline_message_id, text="Ссылка не поддерживается")
         return
     
-    with Session(engine) as session:
-        user = session.get(User, sender.id)
-        if not user:
-            user = User(
-                id=sender.id,
-                name=sender.full_name,
-                username=sender.username
-            )
-            session.add(user)
+    user = get_or_create_user(sender.id, sender.full_name, sender.username)
 
-        if user.is_banned:
-            await context.bot.edit_message_text(chat_id=update.effective_chat.id, text="You are banned")
-            return   
-        
-        request = Request(
-            message_id = inline_message_id,
-            status = RequestStatus.PENDING,
-            type = RequestType.INLINE,
-            link = link,
-            user_account = user,
-        )
-
-        session.add(request)
-        session.commit()
+    if user.is_banned:
+        await context.bot.edit_message_text(inline_message_id=inline_message_id, text="Вы заблокированы")
+        return  
     
-    download_result = await process_link(request, link)
-    file_path = download_result.get("result")
+    requests_today = get_today_requests_count(user.id)
 
-    if not file_path:
+    if requests_today >= MAX_REQUESTS:
+        await context.bot.edit_message_text(inline_message_id=inline_message_id, text="Количество запросов на день исчерпано, попробуйте завтра")
+        return
+    
+    request = create_request(user.id, RequestType.INLINE, link, inline_message_id)
+    
+    download_result = await process_video(request, link)
+    actual_result = download_result.get("result")
+
+    if not actual_result:
         await context.bot.edit_message_text(
             inline_message_id=inline_message_id,
-            text="Error happened."
+            text="Произошла ошибка"
         )
 
-        with Session(engine) as session:
-            request.status = RequestStatus.FAILED
-            request.error_message = download_result.get("error_message")
-            request.error_details = download_result.get("error_details")
-
-            session.commit()
+        update_request(request.id, RequestStatus.FAILED, download_result.get("error_message"), download_result.get("error_details"))
 
     await context.bot.edit_message_media(
         inline_message_id=inline_message_id,
         media=InputMediaVideo(
-            media=f'{HOST}/static/{os.path.basename(file_path)}',
-            caption="✅ Готово!"
+            media=f'{HOST}/static/{os.path.basename(actual_result.get("path"))}',
+            caption=f"by {actual_result.get("author")}"
         )
     )
 
-    with Session(engine) as session:
-        request.status = RequestStatus.SUCCESSFUL
-
-        session.commit()
+    update_request(request.id, RequestStatus.SUCCESSFUL)
 
 async def inline_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query

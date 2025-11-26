@@ -83,7 +83,7 @@ class Video(Base):
     file_id: Mapped[int] = mapped_column(ForeignKey("file.id"))
     file: Mapped["File"] = relationship(back_populates="video")
 
-    request: Mapped["Request"] = relationship(back_populates="video", uselist=False)
+    requests: Mapped[List["Request"]] = relationship(back_populates="video")
 
     def __repr__(self) -> str:
         return f"Video(id={self.id!r}, original_name={self.original_name!r}, author_id={self.author_id!r}, file_id={self.file_id!r})"
@@ -112,7 +112,7 @@ class Request(Base):
     user_account: Mapped["User"] = relationship(back_populates="requests")
 
     video_id: Mapped[Optional[int]] = mapped_column(ForeignKey("video.id"))
-    video: Mapped["Video"] = relationship(back_populates="request")
+    video: Mapped[Optional["Video"]] = relationship(back_populates="requests")
     
     def __repr__(self) -> str:
         return f"Request(id={self.id!r}, status={self.status!r}, type={self.type!r}, link={self.link!r}, chat_id={self.chat_id!r}, message_id={self.message_id!r}, error_message={self.error_message!r}, error_details={self.error_details!r}, created_at={self.created_at!r}, user_account_id={self.user_account_id!r}, video_id={self.video_id!r})"
