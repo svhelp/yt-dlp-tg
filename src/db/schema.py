@@ -8,6 +8,7 @@ from sqlalchemy import Boolean
 from sqlalchemy import Enum
 from sqlalchemy import ForeignKey
 from sqlalchemy import String
+from sqlalchemy import BigInteger
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
@@ -33,7 +34,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "user_account"
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(30))
     username: Mapped[str] = mapped_column(String(30))
     tier: Mapped[UserTier] = mapped_column(
