@@ -1,4 +1,8 @@
 fastapi==0.118.0
 uvicorn==0.37.0
 dotenv==0.9.9
+SQLAlchemy==2.0.43
+pymysql==1.1.2
+greenlet==3.2.4
 python-telegram-bot==22.5
+yt_dlp==2025.9.26
