@@ -76,7 +76,7 @@ class VideoAuthor(Base):
 class Video(Base):
     __tablename__ = "video"
     id: Mapped[int] = mapped_column(primary_key=True)
-    platform_id: Mapped[str] = mapped_column(String(255))
+    # platform_id: Mapped[str] = mapped_column(String(255))
     original_name: Mapped[str] = mapped_column(String(255))
 
     author_id: Mapped[int] = mapped_column(ForeignKey("video_author.id"))
